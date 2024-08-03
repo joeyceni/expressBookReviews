@@ -3,6 +3,8 @@ const jwt = require('jsonwebtoken');
 let books = require("./booksdb.js");
 const regd_users = express.Router();
 
+//console.log("Books ID in auth_users:", books.id);
+
 let users = [];
 
 const isValid = (username)=>{ //returns boolean
@@ -28,6 +30,16 @@ const authenticatedUser = (username, password) => {
     }
 }
 
+// Retrieve all books and their reviews for the user
+regd_users.get("/auth/books", (req, res) => {
+    // Check if user is authenticated
+    if (req.session.authorization) {
+        res.send(JSON.stringify(books,null,4));
+    } else {
+        res.status(401).send("User not authenticated.");
+    }
+});
+
 //only registered users can login
 regd_users.post("/login", (req,res) => {
     const username = req.body.username;
@@ -43,7 +55,7 @@ regd_users.post("/login", (req,res) => {
         // Generate JWT access token
         let accessToken = jwt.sign({
             data: password
-        }, 'access', { expiresIn: 30 });
+        }, 'access', { expiresIn: 3600 });
 
         // Store access token and username in session
         req.session.authorization = {
@@ -57,21 +69,58 @@ regd_users.post("/login", (req,res) => {
 
 // Add a book review
 regd_users.put("/auth/review/:isbn", (req, res) => {
-   // Extract isbn parameter from request URL
-   const isbn = req.params.isbn;
-   let filteredbook = books[isbn];  // Retrieve books object associated with isbn
-   if (filteredbook) {  // Check if book details exists
-       let review = req.query.review;
-       let reviewer = req.session.authorization['username'];
-       if (review) {
-           filteredbook["reviews"][reviewer] = review;
-       }
-       res.send(`The book review for ISBN ${isbn} has been added/updated.`);
-   } else {
-       // Respond if isbn is not found
-       res.send("Unable to find this isbn!");
-   }
+    //console.log("Books before update:", JSON.stringify(books, null, 2));
+
+    if (req.session.authorization) {
+        const isbn = req.params.isbn;
+        const filteredbook = books[isbn];  // Retrieve books object associated with isbn
+
+        if (filteredbook) {
+            const review = req.query.review;
+            const reviewer = req.session.authorization['username'];
+
+            if (review && review.trim()) {  // Check if review is not empty or just whitespace
+                filteredbook["reviews"][reviewer] = review;
+                //console.log(`Review added by ${reviewer}: ${review}`);
+                res.send(`The book review for ISBN ${isbn} has been added/updated.`);
+            } else {
+                res.status(400).send("Review cannot be empty.");
+            }
+
+            //console.log("Books after update:", JSON.stringify(books, null, 2));
+        } else {
+            res.status(404).send("Unable to find this ISBN!");
+        }
+    } else {
+        res.status(401).send("User not authenticated.");
+    }
 });
+
+// Delete a book review
+regd_users.delete("/auth/review/:isbn", (req, res) => {
+    // Ensure the user is authenticated
+    if (req.session.authorization) {
+        const isbn = req.params.isbn; // Extract ISBN from request parameters
+        const filteredBook = books[isbn]; // Retrieve the book object using ISBN
+
+        if (filteredBook) { // Check if the book exists
+            const reviewer = req.session.authorization['username']; // Get the current user's username
+            
+            // Check if the review exists for the current user
+            if (filteredBook.reviews[reviewer]) {
+                delete filteredBook.reviews[reviewer]; // Delete the review
+                res.send(`The review for ISBN ${isbn} has been deleted.`);
+            } else {
+                res.status(404).send("Review not found for the user.");
+            }
+        } else {
+            res.status(404).send("Unable to find this ISBN.");
+        }
+    } else {
+        res.status(401).send("User not authenticated.");
+    }
+});
+
 
 module.exports.authenticated = regd_users;
 module.exports.isValid = isValid;
